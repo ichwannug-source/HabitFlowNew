@@ -1,649 +1,561 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { 
-    Plus, CheckCircle2, Circle, Flame, Sparkles, User, Award, 
-    Wand2, Calendar, Settings, Moon, Sun, Trash2, Quote, 
-    BrainCircuit, X, Check, BookOpen, ChevronRight, TrendingUp
-} from 'lucide-react';
-
-// --- Konfigurasi ---
-const apiKey = ""; // Environment API Key
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-
-const THEMES = {
-    modern: 'from-indigo-600 to-purple-600',
-    emerald: 'from-emerald-500 to-teal-600',
-    sunset: 'from-orange-500 to-rose-500',
-    midnight: 'from-slate-800 to-slate-900'
-};
-
-const AVATARS = ['✨', '🧘', '🔥', '🍀', '🌊', '⚡', '🚀', '🧠', '🌱', '⭐', '🏆', '🦁'];
-
-// --- Utility: Fungsi AI dengan Exponential Backoff ---
-const fetchGeminiWithRetry = async (prompt, systemInstruction, retries = 5) => {
-    const delays = [1000, 2000, 4000, 8000, 16000];
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HabitFlow - Kelola Kebiasaan</title>
     
-    for (let i = 0; i < retries; i++) {
-        try {
-            const response = await fetch(GEMINI_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }],
-                    systemInstruction: { parts: [{ text: systemInstruction }] }
-                })
-            });
-            
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            
-            const result = await response.json();
-            return result.candidates?.[0]?.content?.parts?.[0]?.text || "Maaf, tidak ada respon.";
-        } catch (error) {
-            if (i === retries - 1) return "Sistem AI sedang sibuk. Silakan coba lagi nanti.";
-            await new Promise(res => setTimeout(res, delays[i]));
-        }
-    }
-};
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel untuk JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-// --- Komponen Pohon Pertumbuhan ---
-const GrowthTree = ({ percentage, darkMode }) => {
-    return (
-        <div className="flex flex-col items-center justify-center p-4">
-            <svg width="120" height="120" viewBox="0 0 100 100" className="drop-shadow-md transition-all duration-700 ease-in-out">
-                <ellipse cx="50" cy="90" rx="40" ry="8" fill={darkMode ? "#334155" : "#E2E8F0"} />
-                {percentage >= 0 && (
-                    <g className="animate-in fade-in zoom-in duration-500">
-                        <path d="M50 90 Q50 80 55 75" stroke="#4ADE80" strokeWidth="3" fill="none" />
-                        <path d="M55 75 Q60 70 58 65 Q53 68 55 75" fill="#4ADE80" />
-                    </g>
-                )}
-                {percentage >= 25 && (
-                    <g className="animate-in fade-in slide-in-from-bottom-2 duration-500 delay-100">
-                        <path d="M50 90 L50 60" stroke="#78350F" strokeWidth="4" />
-                        <path d="M50 75 L40 65" stroke="#78350F" strokeWidth="2" />
-                        <path d="M50 70 L60 62" stroke="#78350F" strokeWidth="2" />
-                    </g>
-                )}
-                {percentage >= 50 && (
-                    <g className="animate-in fade-in zoom-in duration-500 delay-200">
-                        <circle cx="50" cy="50" r="18" fill="#22C55E" opacity="0.9" />
-                        <circle cx="40" cy="60" r="12" fill="#16A34A" opacity="0.9" />
-                        <circle cx="60" cy="60" r="12" fill="#16A34A" opacity="0.9" />
-                        <circle cx="50" cy="40" r="12" fill="#4ADE80" opacity="0.9" />
-                    </g>
-                )}
-                {percentage >= 75 && (
-                    <g className="animate-in fade-in zoom-in duration-500 delay-300">
-                        <circle cx="42" cy="48" r="3" fill="#EF4444" />
-                        <circle cx="58" cy="45" r="3" fill="#EF4444" />
-                        <circle cx="50" cy="60" r="3" fill="#EF4444" />
-                        <circle cx="65" cy="55" r="3" fill="#EF4444" />
-                        <circle cx="35" cy="55" r="3" fill="#EF4444" />
-                    </g>
-                )}
-            </svg>
-            <p className={`text-[10px] font-bold mt-2 uppercase tracking-widest transition-colors ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                {percentage < 25 ? "Fase Bibit" : percentage < 50 ? "Tumbuh Ranting" : percentage < 75 ? "Pohon Rindang" : "Siap Panen Makna"}
-            </p>
-        </div>
-    );
-};
-
-export default function App() {
-    const [activeTab, setActiveTab] = useState('tracker');
-    const [user, setUser] = useState(() => {
-        const saved = localStorage.getItem('habitflow_user_v5');
-        return saved ? JSON.parse(saved) : {
-            name: 'Sobat Habit',
-            bio: 'Berusaha menjadi 1% lebih baik setiap hari.',
-            avatar: '✨',
-            theme: 'modern',
-            points: 0,
-            level: 1,
-            darkMode: false,
-            aiTitle: 'Newbie'
-        };
-    });
-
-    const [habits, setHabits] = useState(() => {
-        const saved = localStorage.getItem('habitflow_habits_v5');
-        return saved ? JSON.parse(saved) : [
-            { id: 1, name: 'Meditasi 2 Menit', streak: 0, completed: false }
-        ];
-    });
-
-    const [history, setHistory] = useState(() => {
-        const saved = localStorage.getItem('habitflow_history_v5');
-        return saved ? JSON.parse(saved) : {};
-    });
-
-    const [currentNote, setCurrentNote] = useState('');
-    const [newHabitName, setNewHabitName] = useState('');
-    const [aiLoading, setAiLoading] = useState(false);
-    const [aiSuggestion, setAiSuggestion] = useState(null);
-    const [aiLabContent, setAiLabContent] = useState(null);
-
-    // Dapatkan tanggal hari ini (YYYY-MM-DD lokal)
-    const todayDate = useMemo(() => {
-        const d = new Date();
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    }, []);
-
-    // Sync Data ke Local Storage
-    useEffect(() => {
-        localStorage.setItem('habitflow_user_v5', JSON.stringify(user));
-        localStorage.setItem('habitflow_habits_v5', JSON.stringify(habits));
-        localStorage.setItem('habitflow_history_v5', JSON.stringify(history));
-    }, [user, habits, history]);
-
-    // Update Histori Harian saat Habit berubah
-    useEffect(() => {
-        const total = habits.length;
-        const completedCount = habits.filter(h => h.completed).length;
-        let status = 'none';
-        let percentage = 0;
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; -webkit-tap-highlight-color: transparent; }
         
-        if (total > 0) {
-            percentage = (completedCount / total) * 100;
-            status = percentage === 100 ? 'perfect' : percentage > 0 ? 'partial' : 'none';
-        }
+        /* Custom Animations */
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes zoomIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        
+        .animate-fade-in { animation: fadeIn 0.5s ease-out forwards; }
+        .animate-slide-up { animation: slideUp 0.5s ease-out forwards; }
+        .animate-zoom-in { animation: zoomIn 0.3s ease-out forwards; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
 
-        setHistory(prev => {
-            const todayData = prev[todayDate] || {};
-            // Cegah re-render tak perlu jika data tidak berubah
-            if (todayData.status === status && todayData.percentage === percentage) return prev;
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        // --- Konfigurasi ---
+        const apiKey = ""; // Isi API Key Anda di sini
+        const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+        const THEMES = {
+            modern: 'from-indigo-600 to-purple-600',
+            emerald: 'from-emerald-500 to-teal-600',
+            sunset: 'from-orange-500 to-rose-500',
+            midnight: 'from-slate-800 to-slate-900'
+        };
+
+        const AVATARS = ['✨', '🧘', '🔥', '🍀', '🌊', '⚡', '🚀', '🧠', '🌱', '⭐', '🏆', '🦁'];
+
+        // --- Utility: Fungsi AI ---
+        const fetchGeminiWithRetry = async (prompt, systemInstruction, retries = 5) => {
+            const delays = [1000, 2000, 4000, 8000, 16000];
             
-            return {
-                ...prev,
-                [todayDate]: { 
-                    ...todayData, 
-                    status, 
-                    percentage 
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(GEMINI_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: prompt }] }],
+                            systemInstruction: { parts: [{ text: systemInstruction }] }
+                        })
+                    });
+                    
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    
+                    const result = await response.json();
+                    return result.candidates?.[0]?.content?.parts?.[0]?.text || "Maaf, tidak ada respon.";
+                } catch (error) {
+                    if (i === retries - 1) return "Sistem AI sedang sibuk. Silakan coba lagi nanti.";
+                    await new Promise(res => setTimeout(res, delays[i]));
+                }
+            }
+        };
+
+        // --- Komponen Pohon Pertumbuhan ---
+        const GrowthTree = ({ percentage, darkMode }) => {
+            return (
+                <div className="flex flex-col items-center justify-center p-4">
+                    <svg width="120" height="120" viewBox="0 0 100 100" className="drop-shadow-md transition-all duration-700 ease-in-out">
+                        <ellipse cx="50" cy="90" rx="40" ry="8" fill={darkMode ? "#334155" : "#E2E8F0"} />
+                        {percentage >= 0 && (
+                            <g className="animate-zoom-in">
+                                <path d="M50 90 Q50 80 55 75" stroke="#4ADE80" strokeWidth="3" fill="none" />
+                                <path d="M55 75 Q60 70 58 65 Q53 68 55 75" fill="#4ADE80" />
+                            </g>
+                        )}
+                        {percentage >= 25 && (
+                            <g className="animate-slide-up" style={{ animationDelay: '0.1s' }}>
+                                <path d="M50 90 L50 60" stroke="#78350F" strokeWidth="4" />
+                                <path d="M50 75 L40 65" stroke="#78350F" strokeWidth="2" />
+                                <path d="M50 70 L60 62" stroke="#78350F" strokeWidth="2" />
+                            </g>
+                        )}
+                        {percentage >= 50 && (
+                            <g className="animate-zoom-in" style={{ animationDelay: '0.2s' }}>
+                                <circle cx="50" cy="50" r="18" fill="#22C55E" opacity="0.9" />
+                                <circle cx="40" cy="60" r="12" fill="#16A34A" opacity="0.9" />
+                                <circle cx="60" cy="60" r="12" fill="#16A34A" opacity="0.9" />
+                                <circle cx="50" cy="40" r="12" fill="#4ADE80" opacity="0.9" />
+                            </g>
+                        )}
+                        {percentage >= 75 && (
+                            <g className="animate-zoom-in" style={{ animationDelay: '0.3s' }}>
+                                <circle cx="42" cy="48" r="3" fill="#EF4444" />
+                                <circle cx="58" cy="45" r="3" fill="#EF4444" />
+                                <circle cx="50" cy="60" r="3" fill="#EF4444" />
+                                <circle cx="65" cy="55" r="3" fill="#EF4444" />
+                                <circle cx="35" cy="55" r="3" fill="#EF4444" />
+                            </g>
+                        )}
+                    </svg>
+                    <p className={`text-[10px] font-bold mt-2 uppercase tracking-widest transition-colors ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                        {percentage < 25 ? "Fase Bibit" : percentage < 50 ? "Tumbuh Ranting" : percentage < 75 ? "Pohon Rindang" : "Siap Panen Makna"}
+                    </p>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [activeTab, setActiveTab] = useState('tracker');
+            const [user, setUser] = useState(() => {
+                const saved = localStorage.getItem('habitflow_user_v6');
+                return saved ? JSON.parse(saved) : {
+                    name: 'Sobat Habit',
+                    avatar: '✨',
+                    theme: 'modern',
+                    points: 0,
+                    level: 1,
+                    darkMode: false,
+                    aiTitle: 'Newbie'
+                };
+            });
+
+            const [habits, setHabits] = useState(() => {
+                const saved = localStorage.getItem('habitflow_habits_v6');
+                return saved ? JSON.parse(saved) : [
+                    { id: 1, name: 'Meditasi 2 Menit', streak: 0, completed: false }
+                ];
+            });
+
+            const [history, setHistory] = useState(() => {
+                const saved = localStorage.getItem('habitflow_history_v6');
+                return saved ? JSON.parse(saved) : {};
+            });
+
+            const [currentNote, setCurrentNote] = useState('');
+            const [newHabitName, setNewHabitName] = useState('');
+            const [aiLoading, setAiLoading] = useState(false);
+            const [aiSuggestion, setAiSuggestion] = useState(null);
+            const [aiLabContent, setAiLabContent] = useState(null);
+
+            // Re-render Ikon Lucide setiap kali state berubah
+            useEffect(() => {
+                lucide.createIcons();
+            });
+
+            const todayDate = useMemo(() => {
+                const d = new Date();
+                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            }, []);
+
+            useEffect(() => {
+                localStorage.setItem('habitflow_user_v6', JSON.stringify(user));
+                localStorage.setItem('habitflow_habits_v6', JSON.stringify(habits));
+                localStorage.setItem('habitflow_history_v6', JSON.stringify(history));
+            }, [user, habits, history]);
+
+            useEffect(() => {
+                const total = habits.length;
+                const completedCount = habits.filter(h => h.completed).length;
+                let status = 'none';
+                let percentage = 0;
+                
+                if (total > 0) {
+                    percentage = (completedCount / total) * 100;
+                    status = percentage === 100 ? 'perfect' : percentage > 0 ? 'partial' : 'none';
+                }
+
+                setHistory(prev => {
+                    const todayData = prev[todayDate] || {};
+                    if (todayData.status === status && todayData.percentage === percentage) return prev;
+                    return { ...prev, [todayDate]: { ...todayData, status, percentage } };
+                });
+            }, [habits, todayDate]);
+
+            useEffect(() => {
+                if (history[todayDate]?.note) {
+                    setCurrentNote(history[todayDate].note);
+                }
+            }, [todayDate]);
+
+            const saveNote = (text) => {
+                setCurrentNote(text);
+                setHistory(prev => ({
+                    ...prev,
+                    [todayDate]: { ...prev[todayDate], note: text }
+                }));
+            };
+
+            const handleAiStacking = async () => {
+                if (!newHabitName.trim()) return;
+                setAiLoading(true);
+                const prompt = `Berikan saran Habit Stacking SANGAT SINGKAT (maks 7 kata) untuk kebiasaan baru: "${newHabitName}". Format: [Aktivitas Pemicu] -> [Habit Baru].`;
+                const suggestion = await fetchGeminiWithRetry(prompt, "Jawab dengan bahasa Indonesia, kasual, padat, dan langsung ke intinya.");
+                setAiSuggestion(suggestion);
+                setAiLoading(false);
+            };
+
+            const handleAiLab = async () => {
+                setAiLoading(true);
+                const last7Days = Object.entries(history).sort((a, b) => new Date(a[0]) - new Date(b[0])).slice(-7);
+                const daysText = last7Days.map(([date, data]) => `- ${date}: ${data.percentage || 0}% Selesai`).join('\n');
+                const notesText = last7Days.map(([_, data]) => data.note).filter(Boolean).join('; ');
+                
+                const prompt = `Riwayat 7 hari terakhir:\n${daysText}\n\nCatatan/Kendala:\n${notesText || "Tidak ada catatan."}\n\nSebagai psikolog produktivitas, analisislah pola dan kendala saya. Berikan 1 insight mendalam dan 1 solusi praktis (maks 60 kata).`;
+                const content = await fetchGeminiWithRetry(prompt, "Anda adalah pelatih kebiasaan (habit coach) yang suportif. Gunakan bahasa Indonesia.");
+                setAiLabContent(content);
+                setAiLoading(false);
+            };
+
+            const toggleHabit = (id) => {
+                setHabits(habits.map(h => {
+                    if (h.id === id) {
+                        const isDone = !h.completed;
+                        const ptsChange = isDone ? 15 : -15;
+                        const newPts = Math.max(0, user.points + ptsChange);
+                        const newLevel = Math.floor(newPts / 100) + 1;
+                        
+                        const titles = ['Newbie', 'Explorer', 'Seeker', 'Achiever', 'Master', 'Legend'];
+                        const newTitle = titles[Math.min(titles.length - 1, Math.floor(newLevel / 2))] || 'Legend';
+
+                        setUser(prev => ({ ...prev, points: newPts, level: newLevel, aiTitle: newTitle }));
+                        return { ...h, completed: isDone, streak: isDone ? h.streak + 1 : Math.max(0, h.streak - 1) };
+                    }
+                    return h;
+                }));
+            };
+
+            const addHabit = () => {
+                if (newHabitName.trim()) {
+                    setHabits([...habits, { id: Date.now(), name: newHabitName, streak: 0, completed: false }]);
+                    setNewHabitName('');
+                    setAiSuggestion(null);
                 }
             };
-        });
-    }, [habits, todayDate]);
 
-    // Load Catatan Hari Ini
-    useEffect(() => {
-        if (history[todayDate]?.note) {
-            setCurrentNote(history[todayDate].note);
-        }
-    }, [todayDate, history]);
+            const deleteHabit = (id) => {
+                if(window.confirm('Yakin ingin menghapus habit ini?')) {
+                    setHabits(habits.filter(x => x.id !== id));
+                }
+            };
 
-    // Fungsi Simpan Catatan Harian
-    const saveNote = (text) => {
-        setCurrentNote(text);
-        setHistory(prev => ({
-            ...prev,
-            [todayDate]: { ...prev[todayDate], note: text }
-        }));
-    };
-
-    // AI Stacking Suggestion
-    const handleAiStacking = async () => {
-        if (!newHabitName.trim()) return;
-        setAiLoading(true);
-        const prompt = `Berikan saran Habit Stacking SANGAT SINGKAT (maks 7 kata) untuk kebiasaan baru: "${newHabitName}". Format: [Aktivitas Pemicu] -> [Habit Baru].`;
-        const suggestion = await fetchGeminiWithRetry(prompt, "Jawab dengan bahasa Indonesia, kasual, padat, dan langsung ke intinya.");
-        setAiSuggestion(suggestion);
-        setAiLoading(false);
-    };
-
-    // AI Lab Mindset Analysis
-    const handleAiLab = async () => {
-        setAiLoading(true);
-        // Ambil 7 hari terakhir
-        const last7Days = Object.entries(history)
-            .sort((a, b) => new Date(a[0]) - new Date(b[0]))
-            .slice(-7);
-            
-        const daysText = last7Days.map(([date, data]) => `- ${date}: ${data.percentage || 0}% Selesai`).join('\n');
-        const notesText = last7Days.map(([_, data]) => data.note).filter(Boolean).join('; ');
-        
-        const prompt = `Riwayat 7 hari terakhir:\n${daysText}\n\nCatatan/Kendala pengguna:\n${notesText || "Tidak ada catatan khusus."}\n\nSebagai psikolog produktivitas yang empatik, analisislah pola dan kendala saya. Berikan 1 insight mendalam dan 1 solusi praktis singkat (maks 60 kata).`;
-        
-        const content = await fetchGeminiWithRetry(prompt, "Anda adalah psikolog dan pelatih kebiasaan (habit coach) yang suportif, analitis, dan berwawasan luas. Gunakan bahasa Indonesia.");
-        setAiLabContent(content);
-        setAiLoading(false);
-    };
-
-    // Toggle Habit Completion
-    const toggleHabit = (id) => {
-        setHabits(habits.map(h => {
-            if (h.id === id) {
-                const isDone = !h.completed;
-                const ptsChange = isDone ? 15 : -15;
-                const newPts = Math.max(0, user.points + ptsChange);
-                const newLevel = Math.floor(newPts / 100) + 1;
+            const calendarDays = useMemo(() => {
+                const now = new Date();
+                const year = now.getFullYear();
+                const month = now.getMonth();
+                const firstDayOfMonth = new Date(year, month, 1).getDay();
+                const adjustedFirstDay = firstDayOfMonth === 0 ? 6 : firstDayOfMonth - 1; 
+                const daysInMonth = new Date(year, month + 1, 0).getDate();
                 
-                // Setel gelar AI sederhana
-                const titles = ['Newbie', 'Explorer', 'Seeker', 'Achiever', 'Master', 'Legend'];
-                const newTitle = titles[Math.min(titles.length - 1, Math.floor(newLevel / 2))] || 'Legend';
+                const days = [];
+                for (let i = 0; i < adjustedFirstDay; i++) days.push(null);
+                for (let d = 1; d <= daysInMonth; d++) {
+                    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                    days.push({ day: d, dateStr, data: history[dateStr] });
+                }
+                return days;
+            }, [history]);
 
-                setUser(prev => ({ 
-                    ...prev, 
-                    points: newPts, 
-                    level: newLevel,
-                    aiTitle: newTitle
-                }));
-                
-                return { 
-                    ...h, 
-                    completed: isDone, 
-                    streak: isDone ? h.streak + 1 : Math.max(0, h.streak - 1) 
-                };
-            }
-            return h;
-        }));
-    };
+            const achievements = useMemo(() => {
+                const highestStreak = habits.reduce((max, h) => Math.max(max, h.streak), 0);
+                return [
+                    { id: 'level2', icon: '🚀', title: 'Pecah Telur', desc: 'Mencapai Level 2', unlocked: user.level >= 2 },
+                    { id: 'streak3', icon: '🔥', title: 'Mulai Panas', desc: 'Mencapai 3 hari streak', unlocked: highestStreak >= 3 },
+                    { id: 'streak7', icon: '⭐', title: 'Konsisten 1 Minggu', desc: 'Mencapai 7 hari streak', unlocked: highestStreak >= 7 },
+                    { id: 'perfect_day', icon: '🏆', title: 'Hari Sempurna', desc: '100% habit dalam sehari', unlocked: history[todayDate]?.status === 'perfect' }
+                ];
+            }, [user.level, habits, history, todayDate]);
 
-    // Tambah Habit Baru
-    const addHabit = () => {
-        if (newHabitName.trim()) {
-            setHabits([...habits, { id: Date.now(), name: newHabitName, streak: 0, completed: false }]);
-            setNewHabitName('');
-            setAiSuggestion(null);
-        }
-    };
+            const dailyProgress = history[todayDate]?.percentage || 0;
 
-    // Hapus Habit
-    const deleteHabit = (id) => {
-        if(window.confirm('Yakin ingin menghapus habit ini?')) {
-            setHabits(habits.filter(x => x.id !== id));
-        }
-    };
-
-    // Data Kalender
-    const calendarDays = useMemo(() => {
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = now.getMonth();
-        const firstDayOfMonth = new Date(year, month, 1).getDay();
-        // Adjust agar Senin = 0, Minggu = 6
-        const adjustedFirstDay = firstDayOfMonth === 0 ? 6 : firstDayOfMonth - 1; 
-        const daysInMonth = new Date(year, month + 1, 0).getDate();
-        
-        const days = [];
-        for (let i = 0; i < adjustedFirstDay; i++) days.push(null);
-        for (let d = 1; d <= daysInMonth; d++) {
-            const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-            days.push({ day: d, dateStr, data: history[dateStr] });
-        }
-        return days;
-    }, [history]);
-
-    // Data Achievements / Lencana
-    const achievements = useMemo(() => {
-        const highestStreak = habits.reduce((max, h) => Math.max(max, h.streak), 0);
-        return [
-            { 
-                id: 'level2', 
-                icon: '🚀', 
-                title: 'Pecah Telur', 
-                desc: 'Mencapai Level 2', 
-                unlocked: user.level >= 2 
-            },
-            { 
-                id: 'streak3', 
-                icon: '🔥', 
-                title: 'Mulai Panas', 
-                desc: 'Mencapai 3 hari streak di satu habit', 
-                unlocked: highestStreak >= 3 
-            },
-            { 
-                id: 'streak7', 
-                icon: '⭐', 
-                title: 'Konsisten 1 Minggu', 
-                desc: 'Mencapai 7 hari streak', 
-                unlocked: highestStreak >= 7 
-            },
-            { 
-                id: 'perfect_day', 
-                icon: '🏆', 
-                title: 'Hari Sempurna', 
-                desc: 'Menyelesaikan 100% habit dalam sehari', 
-                unlocked: history[todayDate]?.status === 'perfect' 
-            }
-        ];
-    }, [user.level, habits, history, todayDate]);
-
-    const dailyProgress = history[todayDate]?.percentage || 0;
-
-    return (
-        <div className={`min-h-screen transition-colors duration-500 pb-24 ${user.darkMode ? 'bg-slate-900 text-slate-100' : 'bg-slate-50 text-slate-900'} font-sans`}>
-            {/* Progress Bar Top */}
-            <div className="h-1.5 w-full fixed top-0 z-50 bg-slate-200 dark:bg-slate-800">
-                <div 
-                    className={`h-full bg-gradient-to-r ${THEMES[user.theme]} transition-all duration-700`} 
-                    style={{ width: `${(user.points % 100)}%` }}
-                ></div>
-            </div>
-            
-            <div className="max-w-xl mx-auto px-6 pt-10">
-                {/* Header */}
-                <header className="flex justify-between items-center mb-8">
-                    <div className="flex items-center gap-4">
-                        <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${THEMES[user.theme]} flex items-center justify-center text-2xl shadow-lg`}>
-                            {user.avatar}
-                        </div>
-                        <div>
-                            <h2 className="text-base font-bold leading-none">{user.name}</h2>
-                            <div className="flex items-center gap-2 mt-1.5">
-                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${user.darkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-200 text-slate-600'}`}>
-                                    LVL {user.level}
-                                </span>
-                                <span className={`text-[10px] font-bold uppercase tracking-widest bg-clip-text text-transparent bg-gradient-to-r ${THEMES[user.theme]}`}>
-                                    {user.aiTitle}
-                                </span>
-                            </div>
-                        </div>
+            // Render JSX
+            return (
+                <div className={`min-h-screen transition-colors duration-500 pb-24 ${user.darkMode ? 'bg-slate-900 text-slate-100' : 'bg-slate-50 text-slate-900'} font-sans`}>
+                    <div className="h-1.5 w-full fixed top-0 z-50 bg-slate-200 dark:bg-slate-800">
+                        <div className={`h-full bg-gradient-to-r ${THEMES[user.theme]} transition-all duration-700`} style={{ width: `${(user.points % 100)}%` }}></div>
                     </div>
-                    <button 
-                        onClick={() => setActiveTab('profile')} 
-                        className={`p-3 rounded-2xl border transition-colors ${user.darkMode ? 'border-slate-800 bg-slate-800 hover:bg-slate-700' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
-                    >
-                        <Settings className="w-5 h-5 text-slate-400" />
-                    </button>
-                </header>
-
-                <main>
-                    {/* TAB: TRACKER */}
-                    {activeTab === 'tracker' && (
-                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-                            
-                            {/* Kartu Status Harian */}
-                            <div className={`p-6 rounded-3xl border flex items-center justify-between shadow-sm ${user.darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                    
+                    <div className="max-w-xl mx-auto px-6 pt-10">
+                        <header className="flex justify-between items-center mb-8">
+                            <div className="flex items-center gap-4">
+                                <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${THEMES[user.theme]} flex items-center justify-center text-2xl shadow-lg`}>
+                                    {user.avatar}
+                                </div>
                                 <div>
-                                    <h3 className="text-xl font-bold">Hari Ini</h3>
-                                    <div className="flex items-baseline gap-1 mt-2">
-                                        <span className={`text-4xl font-black bg-clip-text text-transparent bg-gradient-to-r ${THEMES[user.theme]}`}>
-                                            {Math.round(dailyProgress)}%
+                                    <h2 className="text-base font-bold leading-none">{user.name}</h2>
+                                    <div className="flex items-center gap-2 mt-1.5">
+                                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${user.darkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-200 text-slate-600'}`}>
+                                            LVL {user.level}
+                                        </span>
+                                        <span className={`text-[10px] font-bold uppercase tracking-widest bg-clip-text text-transparent bg-gradient-to-r ${THEMES[user.theme]}`}>
+                                            {user.aiTitle}
                                         </span>
                                     </div>
-                                    <p className="text-xs text-slate-400 font-medium mt-1">Terselesaikan</p>
                                 </div>
-                                <GrowthTree percentage={dailyProgress} darkMode={user.darkMode} />
                             </div>
+                            <button onClick={() => setActiveTab('profile')} className={`p-3 rounded-2xl border transition-colors ${user.darkMode ? 'border-slate-800 bg-slate-800 hover:bg-slate-700' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
+                                <i data-lucide="settings" className="w-5 h-5 text-slate-400"></i>
+                            </button>
+                        </header>
 
-                            {/* Form Tambah Habit */}
-                            <div className={`p-5 rounded-3xl border shadow-sm ${user.darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-                                <div className="flex flex-col gap-3">
-                                    <div className="flex gap-2">
-                                        <input 
-                                            value={newHabitName} 
-                                            onChange={e => setNewHabitName(e.target.value)} 
-                                            placeholder="Kebiasaan baru..." 
-                                            className={`flex-1 px-4 py-3.5 rounded-2xl outline-none text-sm font-medium transition-all ${user.darkMode ? 'bg-slate-900 text-white border border-slate-700 focus:border-indigo-500' : 'bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500'}`} 
-                                        />
-                                        <button 
-                                            onClick={handleAiStacking} 
-                                            disabled={aiLoading || !newHabitName}
-                                            className={`p-3.5 rounded-2xl flex items-center justify-center transition-all ${aiLoading ? 'bg-slate-200 animate-pulse' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-600'}`}
-                                            title="Minta Ide Habit Stacking AI"
-                                        >
-                                            <Sparkles className={`w-5 h-5 ${aiLoading ? 'text-slate-400' : ''}`} />
-                                        </button>
-                                    </div>
-                                    
-                                    {aiSuggestion && (
-                                        <div className="p-4 rounded-2xl border text-sm bg-indigo-50/50 border-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:border-indigo-800/50 dark:text-indigo-200 flex gap-3 items-start animate-in fade-in zoom-in">
-                                            <Sparkles className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                                            <div>
-                                                <p className="font-semibold mb-1">Ide Stacking AI:</p>
-                                                <p>{aiSuggestion}</p>
+                        <main>
+                            {activeTab === 'tracker' && (
+                                <div className="space-y-6 animate-slide-up">
+                                    <div className={`p-6 rounded-3xl border flex items-center justify-between shadow-sm ${user.darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                                        <div>
+                                            <h3 className="text-xl font-bold">Hari Ini</h3>
+                                            <div className="flex items-baseline gap-1 mt-2">
+                                                <span className={`text-4xl font-black bg-clip-text text-transparent bg-gradient-to-r ${THEMES[user.theme]}`}>
+                                                    {Math.round(dailyProgress)}%
+                                                </span>
                                             </div>
-                                            <button onClick={() => setAiSuggestion(null)} className="ml-auto opacity-50 hover:opacity-100">
-                                                <X className="w-4 h-4" />
-                                            </button>
+                                            <p className="text-xs text-slate-400 font-medium mt-1">Terselesaikan</p>
                                         </div>
-                                    )}
-                                    
-                                    <button 
-                                        onClick={addHabit} 
-                                        disabled={!newHabitName.trim()}
-                                        className={`w-full py-3.5 rounded-2xl text-white font-bold bg-gradient-to-r ${THEMES[user.theme]} shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed`}
-                                    >
-                                        Tambah Habit
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Daftar Habit */}
-                            <div className="space-y-3">
-                                {habits.length === 0 ? (
-                                    <div className="text-center py-8 text-slate-400 text-sm">
-                                        Belum ada kebiasaan. Tambahkan di atas!
+                                        <GrowthTree percentage={dailyProgress} darkMode={user.darkMode} />
                                     </div>
-                                ) : (
-                                    habits.map(h => (
-                                        <div key={h.id} className={`p-4 rounded-3xl border flex items-center justify-between transition-all duration-300 ${h.completed ? 'bg-emerald-50/50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800' : user.darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 hover:border-slate-300'}`}>
-                                            <div className="flex items-center gap-4 flex-1" onClick={() => toggleHabit(h.id)}>
-                                                <button className={`transition-colors ${h.completed ? 'text-emerald-500' : 'text-slate-300 dark:text-slate-600'}`}>
-                                                    {h.completed ? <CheckCircle2 className="w-7 h-7" /> : <Circle className="w-7 h-7" />}
+
+                                    <div className={`p-5 rounded-3xl border shadow-sm ${user.darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                                        <div className="flex flex-col gap-3">
+                                            <div className="flex gap-2">
+                                                <input 
+                                                    value={newHabitName} 
+                                                    onChange={e => setNewHabitName(e.target.value)} 
+                                                    placeholder="Kebiasaan baru..." 
+                                                    className={`flex-1 px-4 py-3.5 rounded-2xl outline-none text-sm font-medium transition-all ${user.darkMode ? 'bg-slate-900 text-white border border-slate-700 focus:border-indigo-500' : 'bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500'}`} 
+                                                />
+                                                <button 
+                                                    onClick={handleAiStacking} 
+                                                    disabled={aiLoading || !newHabitName}
+                                                    className={`p-3.5 rounded-2xl flex items-center justify-center transition-all ${aiLoading ? 'bg-slate-200 animate-pulse' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-600'}`}
+                                                >
+                                                    <i data-lucide="sparkles" className={`w-5 h-5 ${aiLoading ? 'text-slate-400' : ''}`}></i>
                                                 </button>
-                                                <div className="cursor-pointer select-none">
-                                                    <p className={`font-bold text-sm transition-all ${h.completed ? 'text-slate-400 line-through dark:text-slate-500' : ''}`}>
-                                                        {h.name}
-                                                    </p>
-                                                    <div className={`flex items-center gap-1.5 text-[10px] font-bold uppercase mt-1 ${h.streak > 0 ? 'text-orange-500' : 'text-slate-400'}`}>
-                                                        <Flame className="w-3.5 h-3.5" /> {h.streak} Hari
-                                                    </div>
-                                                </div>
                                             </div>
-                                            <button onClick={() => deleteHabit(h.id)} className="text-slate-300 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400 p-2">
-                                                <Trash2 className="w-4 h-4" />
+                                            
+                                            {aiSuggestion && (
+                                                <div className="p-4 rounded-2xl border text-sm bg-indigo-50/50 border-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:border-indigo-800/50 dark:text-indigo-200 flex gap-3 items-start animate-zoom-in">
+                                                    <i data-lucide="sparkles" className="w-5 h-5 flex-shrink-0 mt-0.5"></i>
+                                                    <div>
+                                                        <p className="font-semibold mb-1">Ide Stacking AI:</p>
+                                                        <p>{aiSuggestion}</p>
+                                                    </div>
+                                                    <button onClick={() => setAiSuggestion(null)} className="ml-auto opacity-50 hover:opacity-100">
+                                                        <i data-lucide="x" className="w-4 h-4"></i>
+                                                    </button>
+                                                </div>
+                                            )}
+                                            
+                                            <button onClick={addHabit} disabled={!newHabitName.trim()} className={`w-full py-3.5 rounded-2xl text-white font-bold bg-gradient-to-r ${THEMES[user.theme]} shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed`}>
+                                                Tambah Habit
                                             </button>
                                         </div>
-                                    ))
-                                )}
-                            </div>
-
-                            {/* Jurnal/Catatan Kendala */}
-                            <div className={`p-5 rounded-3xl border shadow-sm ${user.darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-                                <h3 className="text-sm font-bold flex items-center gap-2 mb-3">
-                                    <BookOpen className="w-4 h-4 text-indigo-500" /> Jurnal & Kendala Hari Ini
-                                </h3>
-                                <textarea 
-                                    value={currentNote}
-                                    onChange={(e) => saveNote(e.target.value)}
-                                    placeholder="Ada kendala hari ini? Tulis di sini agar AI bisa menganalisisnya nanti..."
-                                    className={`w-full p-3 rounded-2xl text-sm min-h-[80px] resize-none outline-none transition-colors ${user.darkMode ? 'bg-slate-900 text-slate-200 border border-slate-700 focus:border-indigo-500' : 'bg-slate-50 border border-slate-200 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100'}`}
-                                />
-                            </div>
-
-                            {/* Kalender Mini */}
-                            <div className={`p-6 rounded-3xl border shadow-sm ${user.darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-                                <div className="flex items-center justify-between mb-5">
-                                    <h3 className="text-sm font-bold flex items-center gap-2">
-                                        <Calendar className="w-4 h-4 text-indigo-500" /> Konsistensi Bulan Ini
-                                    </h3>
-                                </div>
-                                <div className="grid grid-cols-7 gap-1.5 mb-2">
-                                    {['Sn', 'Sl', 'Rb', 'Km', 'Jm', 'Sb', 'Mg'].map(day => (
-                                        <div key={day} className="text-center text-[10px] font-bold text-slate-400 mb-1">{day}</div>
-                                    ))}
-                                </div>
-                                <div className="grid grid-cols-7 gap-1.5">
-                                    {calendarDays.map((d, i) => {
-                                        if (!d) return <div key={`empty-${i}`} className="aspect-square"></div>;
-                                        
-                                        let colorClass = user.darkMode ? 'bg-slate-700/50 text-slate-400' : 'bg-slate-100 text-slate-400';
-                                        
-                                        if (d.data?.status === 'perfect') colorClass = 'bg-emerald-500 text-white shadow-sm';
-                                        else if (d.data?.status === 'partial') colorClass = 'bg-amber-400 text-white shadow-sm';
-                                        
-                                        // Highlight hari ini
-                                        const isToday = d.dateStr === todayDate;
-                                        if (isToday && colorClass.includes('bg-slate')) {
-                                            colorClass = user.darkMode ? 'bg-slate-600 text-white border border-slate-500' : 'bg-white text-slate-800 border-2 border-indigo-200';
-                                        }
-
-                                        return (
-                                            <div key={d.dateStr} className={`aspect-square rounded-xl flex items-center justify-center text-[11px] font-bold transition-all ${colorClass}`}>
-                                                {d.day}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* TAB: AI LAB */}
-                    {activeTab === 'motivation' && (
-                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-                            <div className={`p-8 rounded-3xl border text-center shadow-sm ${user.darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-                                <div className="w-20 h-20 bg-indigo-50 dark:bg-indigo-900/30 rounded-3xl flex items-center justify-center mx-auto mb-5 shadow-inner">
-                                    <BrainCircuit className="w-10 h-10 text-indigo-500" />
-                                </div>
-                                <h2 className="text-2xl font-bold mb-2 text-indigo-600 dark:text-indigo-400">AI Lab ✨</h2>
-                                <p className="text-xs text-slate-500 dark:text-slate-400 mb-8 px-4 leading-relaxed">
-                                    AI akan membaca catatan harian dan tren penyelesaian Anda untuk memberikan *insight* psikologis yang personal.
-                                </p>
-                                
-                                <button 
-                                    onClick={handleAiLab} 
-                                    disabled={aiLoading} 
-                                    className={`px-8 py-3.5 rounded-2xl text-sm text-white font-bold bg-gradient-to-r ${THEMES[user.theme]} flex items-center gap-3 mx-auto shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5`}
-                                >
-                                    {aiLoading ? (
-                                        <>Memproses Analisis...</>
-                                    ) : (
-                                        <>Analisis Mindset Saya <Wand2 className="w-4 h-4" /></>
-                                    )}
-                                </button>
-                                
-                                {aiLabContent && (
-                                    <div className={`mt-10 p-6 rounded-3xl border text-left animate-in slide-in-from-bottom-4 shadow-sm relative overflow-hidden ${user.darkMode ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                                        <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-indigo-500 to-purple-500"></div>
-                                        <Quote className="w-8 h-8 text-indigo-200 dark:text-indigo-900 mb-4" />
-                                        <p className="text-sm leading-relaxed font-medium text-slate-700 dark:text-slate-300 whitespace-pre-wrap">
-                                            {aiLabContent}
-                                        </p>
                                     </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
 
-                    {/* TAB: LENCANA / ACHIEVEMENTS */}
-                    {activeTab === 'achievements' && (
-                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-                            <div className={`p-6 rounded-3xl border flex items-center gap-4 shadow-sm ${user.darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-                                <div className="w-16 h-16 bg-amber-100 dark:bg-amber-900/30 rounded-2xl flex items-center justify-center text-amber-500">
-                                    <Award className="w-8 h-8" />
-                                </div>
-                                <div>
-                                    <h2 className="text-xl font-bold">Hall of Fame</h2>
-                                    <p className="text-xs text-slate-400 mt-1">Kumpulkan lencana dengan konsisten!</p>
-                                </div>
-                            </div>
+                                    <div className="space-y-3">
+                                        {habits.length === 0 ? (
+                                            <div className="text-center py-8 text-slate-400 text-sm">Belum ada kebiasaan. Tambahkan di atas!</div>
+                                        ) : (
+                                            habits.map(h => (
+                                                <div key={h.id} className={`p-4 rounded-3xl border flex items-center justify-between transition-all duration-300 ${h.completed ? 'bg-emerald-50/50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800' : user.darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 hover:border-slate-300'}`}>
+                                                    <div className="flex items-center gap-4 flex-1" onClick={() => toggleHabit(h.id)}>
+                                                        <button className={`transition-colors ${h.completed ? 'text-emerald-500' : 'text-slate-300 dark:text-slate-600'}`}>
+                                                            <i data-lucide={h.completed ? "check-circle-2" : "circle"} className="w-7 h-7"></i>
+                                                        </button>
+                                                        <div className="cursor-pointer select-none">
+                                                            <p className={`font-bold text-sm transition-all ${h.completed ? 'text-slate-400 line-through dark:text-slate-500' : ''}`}>{h.name}</p>
+                                                            <div className={`flex items-center gap-1.5 text-[10px] font-bold uppercase mt-1 ${h.streak > 0 ? 'text-orange-500' : 'text-slate-400'}`}>
+                                                                <i data-lucide="flame" className="w-3.5 h-3.5"></i> {h.streak} Hari
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <button onClick={() => deleteHabit(h.id)} className="text-slate-300 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400 p-2">
+                                                        <i data-lucide="trash-2" className="w-4 h-4"></i>
+                                                    </button>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
 
-                            <div className="grid grid-cols-2 gap-4">
-                                {achievements.map(ach => (
-                                    <div key={ach.id} className={`p-5 rounded-3xl border flex flex-col items-center text-center transition-all ${ach.unlocked ? (user.darkMode ? 'bg-slate-800 border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.1)]' : 'bg-white border-amber-200 shadow-sm') : (user.darkMode ? 'bg-slate-800/50 border-slate-800 opacity-50 grayscale' : 'bg-slate-50 border-slate-200 opacity-60 grayscale')}`}>
-                                        <div className="text-3xl mb-3">{ach.icon}</div>
-                                        <h4 className="font-bold text-sm mb-1">{ach.title}</h4>
-                                        <p className="text-[10px] text-slate-500 leading-tight">{ach.desc}</p>
-                                        {ach.unlocked && (
-                                            <div className="mt-3 bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400 text-[9px] px-2 py-1 rounded-md font-bold uppercase flex items-center gap-1">
-                                                <Check className="w-3 h-3" /> Terbuka
+                                    <div className={`p-5 rounded-3xl border shadow-sm ${user.darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                                        <h3 className="text-sm font-bold flex items-center gap-2 mb-3">
+                                            <i data-lucide="book-open" className="w-4 h-4 text-indigo-500"></i> Jurnal & Kendala Hari Ini
+                                        </h3>
+                                        <textarea 
+                                            value={currentNote}
+                                            onChange={(e) => saveNote(e.target.value)}
+                                            placeholder="Ada kendala hari ini? Tulis di sini agar AI bisa menganalisisnya nanti..."
+                                            className={`w-full p-3 rounded-2xl text-sm min-h-[80px] resize-none outline-none transition-colors ${user.darkMode ? 'bg-slate-900 text-slate-200 border border-slate-700 focus:border-indigo-500' : 'bg-slate-50 border border-slate-200 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100'}`}
+                                        />
+                                    </div>
+
+                                    <div className={`p-6 rounded-3xl border shadow-sm ${user.darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                                        <div className="flex items-center justify-between mb-5">
+                                            <h3 className="text-sm font-bold flex items-center gap-2">
+                                                <i data-lucide="calendar" className="w-4 h-4 text-indigo-500"></i> Konsistensi Bulan Ini
+                                            </h3>
+                                        </div>
+                                        <div className="grid grid-cols-7 gap-1.5 mb-2">
+                                            {['Sn', 'Sl', 'Rb', 'Km', 'Jm', 'Sb', 'Mg'].map(day => (
+                                                <div key={day} className="text-center text-[10px] font-bold text-slate-400 mb-1">{day}</div>
+                                            ))}
+                                        </div>
+                                        <div className="grid grid-cols-7 gap-1.5">
+                                            {calendarDays.map((d, i) => {
+                                                if (!d) return <div key={`empty-${i}`} className="aspect-square"></div>;
+                                                let colorClass = user.darkMode ? 'bg-slate-700/50 text-slate-400' : 'bg-slate-100 text-slate-400';
+                                                if (d.data?.status === 'perfect') colorClass = 'bg-emerald-500 text-white shadow-sm';
+                                                else if (d.data?.status === 'partial') colorClass = 'bg-amber-400 text-white shadow-sm';
+                                                const isToday = d.dateStr === todayDate;
+                                                if (isToday && colorClass.includes('bg-slate')) {
+                                                    colorClass = user.darkMode ? 'bg-slate-600 text-white border border-slate-500' : 'bg-white text-slate-800 border-2 border-indigo-200';
+                                                }
+                                                return <div key={d.dateStr} className={`aspect-square rounded-xl flex items-center justify-center text-[11px] font-bold transition-all ${colorClass}`}>{d.day}</div>;
+                                            })}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'motivation' && (
+                                <div className="space-y-6 animate-slide-up">
+                                    <div className={`p-8 rounded-3xl border text-center shadow-sm ${user.darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                                        <div className="w-20 h-20 bg-indigo-50 dark:bg-indigo-900/30 rounded-3xl flex items-center justify-center mx-auto mb-5 shadow-inner">
+                                            <i data-lucide="brain-circuit" className="w-10 h-10 text-indigo-500"></i>
+                                        </div>
+                                        <h2 className="text-2xl font-bold mb-2 text-indigo-600 dark:text-indigo-400">AI Lab ✨</h2>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-8 px-4 leading-relaxed">
+                                            AI akan membaca catatan harian dan tren penyelesaian Anda untuk memberikan *insight* psikologis.
+                                        </p>
+                                        <button onClick={handleAiLab} disabled={aiLoading} className={`px-8 py-3.5 rounded-2xl text-sm text-white font-bold bg-gradient-to-r ${THEMES[user.theme]} flex items-center gap-3 mx-auto shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5`}>
+                                            {aiLoading ? "Memproses Analisis..." : <span className="flex items-center gap-2">Analisis Mindset Saya <i data-lucide="wand-2" className="w-4 h-4"></i></span>}
+                                        </button>
+                                        
+                                        {aiLabContent && (
+                                            <div className={`mt-10 p-6 rounded-3xl border text-left animate-slide-up shadow-sm relative overflow-hidden ${user.darkMode ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                                                <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-indigo-500 to-purple-500"></div>
+                                                <i data-lucide="quote" className="w-8 h-8 text-indigo-200 dark:text-indigo-900 mb-4"></i>
+                                                <p className="text-sm leading-relaxed font-medium text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{aiLabContent}</p>
                                             </div>
                                         )}
                                     </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* TAB: PROFIL */}
-                    {activeTab === 'profile' && (
-                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-                            <div className={`p-8 rounded-3xl border shadow-sm ${user.darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-                                <div className="flex flex-col items-center mb-8">
-                                    <div className={`w-24 h-24 bg-gradient-to-br ${THEMES[user.theme]} rounded-[2rem] flex items-center justify-center text-5xl mb-5 shadow-lg transform hover:scale-105 transition-transform`}>
-                                        {user.avatar}
-                                    </div>
-                                    <input 
-                                        value={user.name} 
-                                        onChange={e => setUser({...user, name: e.target.value})} 
-                                        className={`text-center font-bold text-2xl bg-transparent border-b-2 border-transparent hover:border-slate-300 focus:border-indigo-500 outline-none w-3/4 pb-1 transition-colors ${user.darkMode ? 'text-white' : 'text-slate-900'}`} 
-                                    />
-                                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-3">
-                                        Level {user.level} • {user.points} XP
-                                    </p>
                                 </div>
-                                
-                                <div className="mb-8">
-                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 block">Pilih Avatar</label>
-                                    <div className="grid grid-cols-6 gap-3">
-                                        {AVATARS.map(e => (
-                                            <button 
-                                                key={e} 
-                                                onClick={() => setUser({...user, avatar: e})} 
-                                                className={`aspect-square text-2xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-2xl flex items-center justify-center transition-transform hover:scale-110 ${user.avatar === e ? 'ring-2 ring-indigo-500 scale-110 shadow-sm' : ''}`}
-                                            >
-                                                {e}
-                                            </button>
+                            )}
+
+                            {activeTab === 'achievements' && (
+                                <div className="space-y-6 animate-slide-up">
+                                    <div className={`p-6 rounded-3xl border flex items-center gap-4 shadow-sm ${user.darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                                        <div className="w-16 h-16 bg-amber-100 dark:bg-amber-900/30 rounded-2xl flex items-center justify-center text-amber-500">
+                                            <i data-lucide="award" className="w-8 h-8"></i>
+                                        </div>
+                                        <div>
+                                            <h2 className="text-xl font-bold">Hall of Fame</h2>
+                                            <p className="text-xs text-slate-400 mt-1">Kumpulkan lencana dengan konsisten!</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        {achievements.map(ach => (
+                                            <div key={ach.id} className={`p-5 rounded-3xl border flex flex-col items-center text-center transition-all ${ach.unlocked ? (user.darkMode ? 'bg-slate-800 border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.1)]' : 'bg-white border-amber-200 shadow-sm') : (user.darkMode ? 'bg-slate-800/50 border-slate-800 opacity-50 grayscale' : 'bg-slate-50 border-slate-200 opacity-60 grayscale')}`}>
+                                                <div className="text-3xl mb-3">{ach.icon}</div>
+                                                <h4 className="font-bold text-sm mb-1">{ach.title}</h4>
+                                                <p className="text-[10px] text-slate-500 leading-tight">{ach.desc}</p>
+                                                {ach.unlocked && (
+                                                    <div className="mt-3 bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400 text-[9px] px-2 py-1 rounded-md font-bold uppercase flex items-center gap-1">
+                                                        <i data-lucide="check" className="w-3 h-3"></i> Terbuka
+                                                    </div>
+                                                )}
+                                            </div>
                                         ))}
                                     </div>
                                 </div>
+                            )}
 
-                                <div className="mb-8">
-                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 block">Pilih Tema Warna</label>
-                                    <div className="flex gap-4">
-                                        {Object.keys(THEMES).map(t => (
-                                            <button 
-                                                key={t} 
-                                                onClick={() => setUser({...user, theme: t})} 
-                                                className={`w-12 h-12 rounded-full bg-gradient-to-br ${THEMES[t]} transition-all hover:scale-110 ${user.theme === t ? 'ring-4 ring-offset-2 ring-indigo-500 dark:ring-offset-slate-800' : 'opacity-70 hover:opacity-100'}`}
-                                            ></button>
-                                        ))}
+                            {activeTab === 'profile' && (
+                                <div className="space-y-6 animate-slide-up">
+                                    <div className={`p-8 rounded-3xl border shadow-sm ${user.darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                                        <div className="flex flex-col items-center mb-8">
+                                            <div className={`w-24 h-24 bg-gradient-to-br ${THEMES[user.theme]} rounded-[2rem] flex items-center justify-center text-5xl mb-5 shadow-lg transform hover:scale-105 transition-transform`}>
+                                                {user.avatar}
+                                            </div>
+                                            <input value={user.name} onChange={e => setUser({...user, name: e.target.value})} className={`text-center font-bold text-2xl bg-transparent border-b-2 border-transparent hover:border-slate-300 focus:border-indigo-500 outline-none w-3/4 pb-1 transition-colors ${user.darkMode ? 'text-white' : 'text-slate-900'}`} />
+                                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-3">Level {user.level} • {user.points} XP</p>
+                                        </div>
+                                        
+                                        <div className="mb-8">
+                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 block">Pilih Avatar</label>
+                                            <div className="grid grid-cols-6 gap-3">
+                                                {AVATARS.map(e => (
+                                                    <button key={e} onClick={() => setUser({...user, avatar: e})} className={`aspect-square text-2xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-2xl flex items-center justify-center transition-transform hover:scale-110 ${user.avatar === e ? 'ring-2 ring-indigo-500 scale-110 shadow-sm' : ''}`}>
+                                                        {e}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="mb-8">
+                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 block">Pilih Tema Warna</label>
+                                            <div className="flex gap-4">
+                                                {Object.keys(THEMES).map(t => (
+                                                    <button key={t} onClick={() => setUser({...user, theme: t})} className={`w-12 h-12 rounded-full bg-gradient-to-br ${THEMES[t]} transition-all hover:scale-110 ${user.theme === t ? 'ring-4 ring-offset-2 ring-indigo-500 dark:ring-offset-slate-800' : 'opacity-70 hover:opacity-100'}`}></button>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <button onClick={() => setUser({...user, darkMode: !user.darkMode})} className={`w-full py-4 rounded-2xl flex items-center justify-between px-6 transition-colors shadow-sm ${user.darkMode ? 'bg-slate-900 border border-slate-700 text-white' : 'bg-slate-100 text-slate-800'}`}>
+                                            <span className="text-sm font-bold flex items-center gap-3">
+                                                <i data-lucide={user.darkMode ? "moon" : "sun"} className={`w-5 h-5 ${user.darkMode ? 'text-indigo-400' : 'text-orange-500'}`}></i>
+                                                {user.darkMode ? "Mode Gelap Aktif" : "Mode Terang Aktif"}
+                                            </span>
+                                            <div className={`w-12 h-6 rounded-full p-1 transition-colors ${user.darkMode ? 'bg-indigo-500' : 'bg-slate-300'}`}>
+                                                <div className={`w-4 h-4 bg-white rounded-full transition-transform ${user.darkMode ? 'translate-x-6' : ''}`}></div>
+                                            </div>
+                                        </button>
                                     </div>
                                 </div>
+                            )}
+                        </main>
+                    </div>
 
-                                <button 
-                                    onClick={() => setUser({...user, darkMode: !user.darkMode})} 
-                                    className={`w-full py-4 rounded-2xl flex items-center justify-between px-6 transition-colors shadow-sm ${user.darkMode ? 'bg-slate-900 border border-slate-700 text-white' : 'bg-slate-100 text-slate-800'}`}
-                                >
-                                    <span className="text-sm font-bold flex items-center gap-3">
-                                        {user.darkMode ? <Moon className="w-5 h-5 text-indigo-400" /> : <Sun className="w-5 h-5 text-orange-500" />}
-                                        {user.darkMode ? "Mode Gelap Aktif" : "Mode Terang Aktif"}
-                                    </span>
-                                    <div className={`w-12 h-6 rounded-full p-1 transition-colors ${user.darkMode ? 'bg-indigo-500' : 'bg-slate-300'}`}>
-                                        <div className={`w-4 h-4 bg-white rounded-full transition-transform ${user.darkMode ? 'translate-x-6' : ''}`}></div>
-                                    </div>
-                                </button>
-                            </div>
+                    <nav className={`fixed bottom-0 left-0 right-0 border-t px-6 py-4 z-40 backdrop-blur-xl ${user.darkMode ? 'bg-slate-900/90 border-slate-800' : 'bg-white/90 border-slate-200'}`}>
+                        <div className="max-w-xl mx-auto flex justify-between items-center px-2">
+                            {[
+                                { id: 'tracker', label: 'Harian', icon: 'calendar' },
+                                { id: 'motivation', label: 'AI Lab', icon: 'brain-circuit' },
+                                { id: 'achievements', label: 'Lencana', icon: 'award' },
+                                { id: 'profile', label: 'Profil', icon: 'user' }
+                            ].map(tab => {
+                                const isActive = activeTab === tab.id;
+                                return (
+                                    <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex flex-col items-center gap-1.5 transition-all duration-300 ${isActive ? 'text-indigo-500 scale-110' : 'text-slate-400 hover:text-slate-500 dark:hover:text-slate-300'}`}>
+                                        <i data-lucide={tab.icon} className={`w-6 h-6 ${isActive ? 'fill-indigo-50 stroke-indigo-500 dark:fill-indigo-900/30' : ''}`} style={{ strokeWidth: isActive ? 2.5 : 2 }}></i>
+                                        <span className={`text-[10px] uppercase tracking-wider ${isActive ? 'font-bold' : 'font-medium'}`}>{tab.label}</span>
+                                    </button>
+                                );
+                            })}
                         </div>
-                    )}
-                </main>
-            </div>
-
-            {/* Navigasi Bawah */}
-            <nav className={`fixed bottom-0 left-0 right-0 border-t px-6 py-4 z-40 backdrop-blur-xl ${user.darkMode ? 'bg-slate-900/90 border-slate-800' : 'bg-white/90 border-slate-200'}`}>
-                <div className="max-w-xl mx-auto flex justify-between items-center px-2">
-                    {[
-                        { id: 'tracker', label: 'Harian', icon: Calendar },
-                        { id: 'motivation', label: 'AI Lab', icon: BrainCircuit },
-                        { id: 'achievements', label: 'Lencana', icon: Award },
-                        { id: 'profile', label: 'Profil', icon: User }
-                    ].map(tab => {
-                        const Icon = tab.icon;
-                        const isActive = activeTab === tab.id;
-                        return (
-                            <button 
-                                key={tab.id} 
-                                onClick={() => setActiveTab(tab.id)} 
-                                className={`flex flex-col items-center gap-1.5 transition-all duration-300 ${isActive ? 'text-indigo-500 scale-110' : 'text-slate-400 hover:text-slate-500 dark:hover:text-slate-300'}`}
-                            >
-                                <Icon className={`w-6 h-6 ${isActive ? 'fill-indigo-50 stroke-indigo-500 dark:fill-indigo-900/30' : ''}`} strokeWidth={isActive ? 2.5 : 2} />
-                                <span className={`text-[10px] uppercase tracking-wider ${isActive ? 'font-bold' : 'font-medium'}`}>{tab.label}</span>
-                            </button>
-                        );
-                    })}
+                    </nav>
                 </div>
-            </nav>
-        </div>
-    );
-}
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
