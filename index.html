@@ -290,6 +290,8 @@
 
             const achievements = useMemo(() => {
                 const highestStreak = habits.reduce((max, h) => Math.max(max, h.streak), 0);
+                const habitsWith21Streak = habits.filter(h => h.streak >= 21).length;
+                const habitsWith40Streak = habits.filter(h => h.streak >= 40).length;
                 return [
                     { id: 'level2', icon: '🚀', title: 'Pecah Telur', desc: 'Mencapai Level 2', unlocked: user.level >= 2 },
                     { id: 'streak3', icon: '🔥', title: 'Mulai Panas', desc: 'Mencapai 3 hari streak', unlocked: highestStreak >= 3 },
