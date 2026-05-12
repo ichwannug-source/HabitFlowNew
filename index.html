@@ -292,6 +292,7 @@
                 const highestStreak = habits.reduce((max, h) => Math.max(max, h.streak), 0);
                 const habitsWith21Streak = habits.filter(h => h.streak >= 21).length;
                 const habitsWith40Streak = habits.filter(h => h.streak >= 40).length;
+                
                 return [
                     { id: 'level2', icon: '🚀', title: 'Pecah Telur', desc: 'Mencapai Level 2', unlocked: user.level >= 2 },
                     { id: 'streak3', icon: '🔥', title: 'Mulai Panas', desc: 'Mencapai 3 hari streak', unlocked: highestStreak >= 3 },
@@ -305,6 +306,8 @@
                     { id: 'perfect_day', icon: '🏆', title: 'Hari Sempurna', desc: '100% habit selesai dalam sehari', unlocked: history[todayDate]?.status === 'perfect' }
                 ];
             }, [user.level, habits, history, todayDate]);
+
+            const dailyProgress = history[todayDate]?.percentage || 0;
 
             const dailyProgress = history[todayDate]?.percentage || 0;
 
